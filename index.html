@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gopalsing Social Health Care Record System</title>
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- jsPDF -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+  <style>
+    :root{ --accent:#0d6efd; --muted:#6c757d; --bg:#f6f8fb; }
+    body{ font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial; background:var(--bg); }
+    .topbar{ background:#fff; box-shadow:0 1px 0 rgba(0,0,0,.04); padding:12px 16px; position:sticky; top:0; z-index:60; display:flex; gap:12px; align-items:center; }
+    .title { font-weight:700; font-size:18px; color:var(--accent); margin-right:auto; }
+    .card-anim{ border-radius:8px; transition: transform .18s ease, box-shadow .18s ease; }
+    .card-anim:hover{ transform: translateY(-6px); box-shadow: 0 12px 30px rgba(13,110,253,.06); }
+    .thumb{ width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid #e9eef6; }
+    .small-muted{ color:var(--muted); font-size:.9rem; }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace; }
+    .chart-card{ min-height:200px; }
+    .fade-up{ animation:fadeUp .36s ease both; }
+    @keyframes fadeUp{ from{opacity:0; transform:translateY(8px)} to{opacity:1; transform:none} }
+    .action-btn{ min-width:84px; }
+    .pill{ display:inline-block; padding:.25rem .6rem; border-radius:999px; background:#eef2ff; color:var(--accent); font-weight:600; }
+    .controls-row .btn{ min-width:120px; }
+    .route-hidden{ display:none; }
+    .small-card{ border-radius:8px; background:#fff; padding:12px; box-shadow: 0 6px 18px rgba(0,0,0,.04) }
+  </style>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="title">Gopalsing — Social Health Care Records</div>
+
+    <input id="globalSearch" class="form-control form-control-sm" style="max-width:360px" placeholder="Search patient, condition or id" />
+    <button id="btnExport" class="btn btn-outline-secondary btn-sm ms-2">Export JSON</button>
+    <button id="btnImport" class="btn btn-outline-secondary btn-sm">Import JSON</button>
+    <input id="fileImport" type="file" accept="application/json" style="display:none">
+    <button id="btnNew" class="btn btn-primary btn-sm ms-2">Add Patient</button>
+  </header>
+
+  <main class="container-fluid p-3">
+    <!-- ROUTES: #/dashboard and #/patient/:id -->
+    <div id="route-dashboard" class="route">
+      <div class="row g-3">
+        <!-- LEFT SIDEBAR -->
+        <aside class="col-lg-3">
+          <div class="card card-anim p-3 mb-3 sidebar">
+            <h6>Filters</h6>
+            <div class="mb-2">
+              <select id="filterGender" class="form-select form-select-sm">
+                <option value="all">All genders</option><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <select id="filterAge" class="form-select form-select-sm">
+                <option value="all">All ages</option><option value="0-17">0-17</option><option value="18-30">18-30</option><option value="31-45">31-45</option><option value="46-60">46-60</option><option value="60+">60+</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <select id="filterStatus" class="form-select form-select-sm">
+                <option value="all">All status</option><option value="recovered">Recovered</option><option value="treatment">Under Treatment</option><option value="critical">Critical</option>
+              </select>
+            </div>
+
+            <div class="d-grid gap-2 mt-3">
+              <button id="demoLoad" class="btn btn-outline-primary btn-sm">Load demo</button>
+              <button id="clearAll" class="btn btn-outline-danger btn-sm">Clear all</button>
+            </div>
+
+            <hr>
+            <div class="small-muted">Total patients</div>
+            <div class="h4" id="statTotal">0</div>
+            <div class="small-muted mt-2">Avg BMI</div>
+            <div id="statBMI" class="h5">0</div>
+            <div class="small-muted mt-2">Recovery rate</div>
+            <div id="statRecovery" class="h5">0%</div>
+
+          </div>
+        </aside>
+
+        <!-- CENTER: charts -->
+        <section class="col-lg-9">
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <div class="card card-anim p-3 chart-card fade-up">
+                <h6>Condition Distribution</h6>
+                <canvas id="chartCondition"></canvas>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card card-anim p-3 chart-card fade-up">
+                <h6>Patients by Age</h6>
+                <canvas id="chartAge"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="card card-anim p-3 fade-up">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0">Patient list</h6>
+              <div class="small-muted">Records: <span id="recordCount">0</span></div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="table table-hover align-middle">
+                <thead>
+                  <tr>
+                    <th>#</th><th>Photo</th><th>Name</th><th>Condition</th><th>Age</th><th>BMI</th><th>Status</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="tablePatients"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- PATIENT ROUTE -->
+    <div id="route-patient" class="route route-hidden">
+      <div class="mb-3 d-flex justify-content-between align-items-center">
+        <div>
+          <button id="backBtn" class="btn btn-outline-secondary btn-sm">← Back</button>
+          <span class="ms-2 h5" id="patientNameTitle">Patient</span>
+        </div>
+        <div class="d-flex gap-2 controls-row">
+          <button id="btnExportPatient" class="btn btn-outline-secondary btn-sm">Export JSON</button>
+          <button id="btnPdf" class="btn btn-outline-primary btn-sm">Export PDF</button>
+          <button id="btnToggleRealtime" class="btn btn-outline-success btn-sm">Start Real-time</button>
+          <button id="btnEditPatient" class="btn btn-primary btn-sm">Edit</button>
+        </div>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-lg-4">
+          <div class="small-card mb-3">
+            <div class="d-flex gap-3 align-items-center">
+              <img id="patientPhoto" src="https://via.placeholder.com/96" class="thumb" alt="">
+              <div>
+                <h5 id="patientNameH">Name</h5>
+                <div class="small-muted" id="patientMeta">Age • Gender</div>
+                <div class="mt-2 small-muted">Condition</div>
+                <div id="patientCond" class="fw-bold">—</div>
+              </div>
+            </div>
+
+            <hr>
+            <div class="small-muted">Latest vitals</div>
+            <div id="latestVitals" class="mt-2"></div>
+            <hr>
+            <div class="small-muted">Notes</div>
+            <div id="patientNotes" class="mt-2 small-muted mono"></div>
+          </div>
+
+          <div class="card card-anim p-3">
+            <h6>Add manual vitals</h6>
+            <form id="vitalsForm">
+              <div class="mb-2">
+                <label class="form-label small-muted">Systolic</label>
+                <input id="v_systolic" type="number" class="form-control" placeholder="e.g. 120" required>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small-muted">Diastolic</label>
+                <input id="v_diastolic" type="number" class="form-control" placeholder="e.g. 80" required>
+              </div>
+              <div class="mb-2 row g-2">
+                <div class="col">
+                  <label class="form-label small-muted">Heart Rate</label>
+                  <input id="v_hr" type="number" class="form-control" placeholder="bpm">
+                </div>
+                <div class="col">
+                  <label class="form-label small-muted">Sugar (mg/dL)</label>
+                  <input id="v_sugar" type="number" class="form-control" placeholder="">
+                </div>
+              </div>
+              <div class="d-grid gap-2">
+                <button class="btn btn-primary btn-sm" type="submit">Add Vitals</button>
+                <button id="btnClearVitals" type="button" class="btn btn-outline-secondary btn-sm">Clear Inputs</button>
+              </div>
+            </form>
+          </div>
+
+        </div>
+
+        <div class="col-lg-8">
+          <div class="row g-3">
+            <div class="col-12">
+              <div class="card card-anim p-3 chart-card">
+                <h6>Blood Pressure (Systolic / Diastolic)</h6>
+                <canvas id="chartBP" style="height:240px"></canvas>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card card-anim p-3 chart-card">
+                <h6>Sugar (mg/dL)</h6>
+                <canvas id="chartSugar" style="height:180px"></canvas>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card card-anim p-3 chart-card">
+                <h6>Heart Rate (bpm) & BMI</h6>
+                <canvas id="chartHR" style="height:180px"></canvas>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="card card-anim p-3">
+                <h6>Vitals History (table)</h6>
+                <div class="table-responsive">
+                  <table class="table table-sm">
+                    <thead><tr><th>Time</th><th>Sys</th><th>Dia</th><th>HR</th><th>Sugar</th><th>Actions</th></tr></thead>
+                    <tbody id="vitalsTable"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- MODAL: Add / Edit Patient -->
+  <div class="modal fade" id="modalPatient" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <form id="formPatient">
+          <div class="modal-header"><h5 class="modal-title">Add / Edit Patient</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-body">
+            <input type="hidden" id="p_id">
+            <div class="row g-2">
+              <div class="col-md-6"><label class="form-label">Full name</label><input id="p_name" class="form-control" required></div>
+              <div class="col-md-3"><label class="form-label">Age</label><input id="p_age" type="number" min="0" class="form-control" required></div>
+              <div class="col-md-3"><label class="form-label">Gender</label><select id="p_gender" class="form-select"><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option></select></div>
+
+              <div class="col-md-4"><label class="form-label">Height (cm)</label><input id="p_height" type="number" step="0.1" class="form-control" required></div>
+              <div class="col-md-4"><label class="form-label">Weight (kg)</label><input id="p_weight" type="number" step="0.1" class="form-control" required></div>
+              <div class="col-md-4"><label class="form-label">Condition</label><input id="p_condition" class="form-control" required></div>
+
+              <div class="col-md-6"><label class="form-label">Status</label><select id="p_status" class="form-select"><option value="recovered">Recovered</option><option value="treatment">Under Treatment</option><option value="critical">Critical</option></select></div>
+              <div class="col-md-6"><label class="form-label">Photo URL</label><input id="p_photo" class="form-control" placeholder="https://..."></div>
+
+              <div class="col-12"><label class="form-label">Notes</label><textarea id="p_notes" class="form-control" rows="3"></textarea></div>
+            </div>
+          </div>
+          <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+  // SPA + App logic
+  (function(){
+    // storage key
+    const KEY = 'gopal_shealth_v1';
+
+    // app state
+    let state = { patients: [] };
+    let currentPatientId = null;
+    let realtimeTimer = null;
+    let bpChart, sugarChart, hrChart, condChart, ageChart;
+
+    // helpers
+    function uid(){ return Math.random().toString(36).slice(2,9); }
+    function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+    function load(){ const raw = localStorage.getItem(KEY); state = raw ? JSON.parse(raw) : { patients: [] }; }
+    function nowISO(){ return new Date().toISOString(); }
+    function computeBMI(h, w){ if(!h || !w) return 0; const m = h/100; return Math.round((w/(m*m)) * 10)/10; }
+    function escape(s){ return (s||'').toString().replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+    // DOM refs
+    const routeDashboard = document.getElementById('route-dashboard');
+    const routePatient = document.getElementById('route-patient');
+    const tablePatients = document.getElementById('tablePatients');
+    const recordCount = document.getElementById('recordCount');
+    const statTotal = document.getElementById('statTotal');
+    const statBMI = document.getElementById('statBMI');
+    const statRecovery = document.getElementById('statRecovery');
+    const globalSearch = document.getElementById('globalSearch');
+    const filterGender = document.getElementById('filterGender');
+    const filterAge = document.getElementById('filterAge');
+    const filterStatus = document.getElementById('filterStatus');
+    const demoLoad = document.getElementById('demoLoad');
+    const clearAll = document.getElementById('clearAll');
+    const btnNew = document.getElementById('btnNew');
+    const modalPatient = new bootstrap.Modal(document.getElementById('modalPatient'));
+    const formPatient = document.getElementById('formPatient');
+
+    // patient view refs
+    const backBtn = document.getElementById('backBtn');
+    const patientNameTitle = document.getElementById('patientNameTitle');
+    const patientPhoto = document.getElementById('patientPhoto');
+    const patientNameH = document.getElementById('patientNameH');
+    const patientMeta = document.getElementById('patientMeta');
+    const patientCond = document.getElementById('patientCond');
+    const patientNotes = document.getElementById('patientNotes');
+    const latestVitals = document.getElementById('latestVitals');
+    const vitalsForm = document.getElementById('vitalsForm');
+    const v_systolic = document.getElementById('v_systolic');
+    const v_diastolic = document.getElementById('v_diastolic');
+    const v_hr = document.getElementById('v_hr');
+    const v_sugar = document.getElementById('v_sugar');
+    const vitalsTable = document.getElementById('vitalsTable');
+    const btnToggleRealtime = document.getElementById('btnToggleRealtime');
+    const btnEditPatient = document.getElementById('btnEditPatient');
+    const btnPdf = document.getElementById('btnPdf');
+    const btnExportPatient = document.getElementById('btnExportPatient');
+    const btnClearVitals = document.getElementById('btnClearVitals');
+
+    // init charts on dashboard
+    function initDashCharts(){
+      const ctxC = document.getElementById('chartCondition').getContext('2d');
+      condChart = new Chart(ctxC, { type:'bar', data:{ labels:[], datasets:[{ label:'Patients', data:[], backgroundColor:'#8dd3f7' }] }, options:{ plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } } });
+
+      const ctxA = document.getElementById('chartAge').getContext('2d');
+      ageChart = new Chart(ctxA, { type:'bar', data:{ labels:[], datasets:[{ label:'Count', data:[], backgroundColor:'#b3de69' }] }, options:{ plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } } });
+    }
+
+    // patient charts
+    function initPatientCharts(){
+      const bpCtx = document.getElementById('chartBP').getContext('2d');
+      bpChart = new Chart(bpCtx, { type:'line', data:{ labels:[], datasets:[ { label:'Systolic', data:[], borderColor:'#ff6384', tension:0.25 }, { label:'Diastolic', data:[], borderColor:'#36a2eb', tension:0.25 } ] }, options:{ interaction:{ mode:'index', intersect:false }, plugins:{ legend:{ position:'top' } }, scales:{ x:{ title:{ display:true, text:'Time' } }, y:{ beginAtZero:false } } } });
+
+      const sugarCtx = document.getElementById('chartSugar').getContext('2d');
+      sugarChart = new Chart(sugarCtx, { type:'line', data:{ labels:[], datasets:[ { label:'Sugar (mg/dL)', data:[], borderColor:'#f39c12', tension:0.25 } ] }, options:{ plugins:{ legend:{ display:false } }, scales:{ x:{ display:true }, y:{ beginAtZero:true } } } });
+
+      const hrCtx = document.getElementById('chartHR').getContext('2d');
+      hrChart = new Chart(hrCtx, { type:'line', data:{ labels:[], datasets:[ { label:'Heart rate (bpm)', data:[], borderColor:'#28a745', tension:0.25 }, { label:'BMI', data:[], borderColor:'#6f42c1', tension:0.25, yAxisID:'y2' } ] }, options:{ scales:{ y:{ beginAtZero:true }, y2:{ position:'right', grid:{ drawOnChartArea:false } } }, plugins:{ legend:{ position:'top' } } } });
+    }
+
+    // routing helpers
+    function showRoute(r){
+      document.querySelectorAll('.route').forEach(el=>el.classList.add('route-hidden'));
+      if(r === 'dashboard'){ routeDashboard.classList.remove('route-hidden'); }
+      else if(r === 'patient'){ routePatient.classList.remove('route-hidden'); }
+    }
+
+    // main render
+    function renderDashboard(){
+      const search = globalSearch.value.trim().toLowerCase();
+      const g = filterGender.value;
+      const ag = filterAge.value;
+      const st = filterStatus.value;
+
+      const filtered = state.patients.filter(p=>{
+        if(g !== 'all' && p.gender !== g) return false;
+        if(ag !== 'all'){
+          const group = ageGroup(p.age);
+          if(group !== ag) return false;
+        }
+        if(st !== 'all' && p.status !== st) return false;
+        if(search){
+          const hay = (p.name + ' ' + p.condition + ' ' + (p.id||'')).toLowerCase();
+          if(!hay.includes(search)) return false;
+        }
+        return true;
+      });
+
+      tablePatients.innerHTML = '';
+      filtered.slice().reverse().forEach((p, idx)=>{
+        const tr = document.createElement('tr');
+        const thumb = p.photo || 'https://via.placeholder.com/48?text=P';
+        tr.innerHTML = `
+          <td>${filtered.length - idx}</td>
+          <td><img src="${escape(thumb)}" class="thumb" /></td>
+          <td><strong>${escape(p.name)}</strong><div class="small-muted mono">ID: ${escape(p.id)}</div></td>
+          <td>${escape(p.condition)}</td>
+          <td>${escape(p.age)}</td>
+          <td>${escape(p.bmi || '')}</td>
+          <td>${escape(p.status)}</td>
+          <td>
+            <button class="btn btn-sm btn-outline-primary action-btn" data-act="view" data-id="${p.id}">View</button>
+            <button class="btn btn-sm btn-outline-danger action-btn ms-1" data-act="del" data-id="${p.id}">Delete</button>
+          </td>
+        `;
+        tablePatients.appendChild(tr);
+      });
+
+      recordCount.textContent = filtered.length;
+      // stats
+      statTotal.textContent = state.patients.length;
+      const avgBmi = state.patients.length ? Math.round((state.patients.reduce((s,x)=>s + (x.bmi||0),0) / state.patients.length) *10)/10 : 0;
+      statBMI.textContent = avgBmi;
+      const recovered = state.patients.filter(x=>x.status==='recovered').length;
+      statRecovery.textContent = state.patients.length ? Math.round((recovered/state.patients.length)*100) + '%' : '0%';
+
+      // charts: condition distribution & age groups
+      const condCounts = {};
+      const ageBuckets = { '0-17':0,'18-30':0,'31-45':0,'46-60':0,'60+':0 };
+      state.patients.forEach(p => { condCounts[p.condition] = (condCounts[p.condition]||0) + 1; const ag = ageGroup(p.age); ageBuckets[ag]++; });
+      condChart.data.labels = Object.keys(condCounts); condChart.data.datasets[0].data = Object.values(condCounts); condChart.update();
+      ageChart.data.labels = Object.keys(ageBuckets); ageChart.data.datasets[0].data = Object.values(ageBuckets); ageChart.update();
+    }
+
+    function ageGroup(age){
+      if(!age) return '0-17';
+      if(age <= 17) return '0-17';
+      if(age <= 30) return '18-30';
+      if(age <= 45) return '31-45';
+      if(age <= 60) return '46-60';
+      return '60+';
+    }
+
+    // actions on dashboard
+    document.addEventListener('click', (e)=>{
+      const btn = e.target.closest('button');
+      if(!btn) return;
+      if(btn.dataset.act === 'view'){ const id = btn.dataset.id; openPatient(id); }
+      if(btn.dataset.act === 'del'){ const id = btn.dataset.id; if(!confirm('Delete patient?')) return; state.patients = state.patients.filter(p=>p.id!==id); save(); renderDashboard(); }
+    });
+
+    // open patient view
+    function openPatient(id){
+      const p = state.patients.find(x=>x.id===id); if(!p) return alert('Not found');
+      currentPatientId = id;
+      showRoute('patient');
+      renderPatientHeader(p);
+      renderPatientVitals(p);
+      initPatientCharts();
+    }
+
+    function renderPatientHeader(p){
+      patientNameTitle.textContent = p.name;
+      patientPhoto.src = p.photo || 'https://via.placeholder.com/96';
+      patientNameH.textContent = p.name;
+      patientMeta.textContent = `${p.age} • ${p.gender} • BMI: ${p.bmi || '-'}`;
+      patientCond.textContent = p.condition;
+      patientNotes.textContent = p.notes || '—';
+      // export patient data button
+      btnExportPatient.onclick = ()=>{ const blob = new Blob([JSON.stringify(p, null,2)], {type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`patient-${p.id}.json`; a.click(); URL.revokeObjectURL(url); };
+      // pdf
+      btnPdf.onclick = ()=> exportPatientPdf(p);
+      // edit
+      btnEditPatient.onclick = ()=> openEditModal(p);
+    }
+
+    function renderPatientVitals(p){
+      // populate last vitals summary
+      const arr = p.vitals || [];
+      const last = arr.length ? arr[arr.length-1] : null;
+      latestVitals.innerHTML = last ? `<div class="small-muted">At ${new Date(last.time).toLocaleString()}</div><div><strong>BP:</strong> ${last.systolic}/${last.diastolic} mmHg • <strong>HR:</strong> ${last.hr || '-'} bpm • <strong>Sugar:</strong> ${last.sugar || '-'} mg/dL</div>` : '<div class="small-muted">No vitals yet</div>';
+      // table
+      vitalsTable.innerHTML = '';
+      arr.slice().reverse().forEach(v=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${new Date(v.time).toLocaleString()}</td><td>${v.systolic}</td><td>${v.diastolic}</td><td>${v.hr || '-'}</td><td>${v.sugar || '-'}</td><td><button class="btn btn-sm btn-outline-danger" data-del-v="${v.time}">Delete</button></td>`;
+        vitalsTable.appendChild(tr);
+      });
+
+      // wire delete vitals
+      document.querySelectorAll('[data-del-v]').forEach(btn => btn.onclick = (e) => {
+        const t = btn.getAttribute('data-del-v');
+        p.vitals = p.vitals.filter(x=>x.time !== t);
+        save();
+        renderPatientVitals(p);
+        updatePatientCharts(p);
+      });
+
+      updatePatientCharts(p);
+    }
+
+    // update patient charts with vitals
+    function updatePatientCharts(p){
+      const arr = p.vitals || [];
+      const labels = arr.map(v=> (new Date(v.time)).toLocaleTimeString());
+      const sSys = arr.map(v=>v.systolic);
+      const sDia = arr.map(v=>v.diastolic);
+      const sugars = arr.map(v=>v.sugar || null);
+      const hrs = arr.map(v=>v.hr || null);
+      const bmis = arr.map(_=>p.bmi || null);
+
+      // BP
+      bpChart.data.labels = labels; bpChart.data.datasets[0].data = sSys; bpChart.data.datasets[1].data = sDia; bpChart.update();
+
+      sugarChart.data.labels = labels; sugarChart.data.datasets[0].data = sugars; sugarChart.update();
+
+      hrChart.data.labels = labels; hrChart.data.datasets[0].data = hrs; hrChart.data.datasets[1].data = bmis; hrChart.update();
+    }
+
+    // add vitals manual
+    vitalsForm.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      if(!currentPatientId) return;
+      const p = state.patients.find(x=>x.id===currentPatientId);
+      if(!p) return;
+      const v = { time: new Date().toISOString(), systolic: Number(v_systolic.value), diastolic: Number(v_diastolic.value), hr: v_hr.value ? Number(v_hr.value) : null, sugar: v_sugar.value ? Number(v_sugar.value) : null };
+      p.vitals = p.vitals || []; p.vitals.push(v);
+      save();
+      v_systolic.value=''; v_diastolic.value=''; v_hr.value=''; v_sugar.value='';
+      renderPatientVitals(p);
+    });
+
+    btnClearVitals.addEventListener('click', ()=>{ v_systolic.value=''; v_diastolic.value=''; v_hr.value=''; v_sugar.value=''; });
+
+    // realtime simulation (adds a random vitals point every 5s)
+    btnToggleRealtime.addEventListener('click', ()=>{
+      if(!currentPatientId) return alert('Open a patient first');
+      if(realtimeTimer){ clearInterval(realtimeTimer); realtimeTimer=null; btnToggleRealtime.textContent='Start Real-time'; btnToggleRealtime.classList.replace('btn-danger','btn-success'); }
+      else { realtimeTimer = setInterval(()=> simulateVitalTick(currentPatientId), 5000); btnToggleRealtime.textContent='Stop Real-time'; btnToggleRealtime.classList.replace('btn-success','btn-danger'); }
+    });
+
+    function simulateVitalTick(patientId){
+      const p = state.patients.find(x=>x.id===patientId); if(!p) return;
+      // pick last values or sensible defaults
+      const last = (p.vitals && p.vitals.length) ? p.vitals[p.vitals.length-1] : null;
+      const baseSys = last ? last.systolic : 120;
+      const baseDia = last ? last.diastolic : 80;
+      const sys = Math.max(80, Math.round(baseSys + (Math.random()*6 - 3)));
+      const dia = Math.max(50, Math.round(baseDia + (Math.random()*4 - 2)));
+      const hr = Math.max(48, Math.round((last && last.hr ? last.hr : 72) + (Math.random()*6 - 3)));
+      const sugar = Math.max(60, Math.round((last && last.sugar ? last.sugar : 110) + (Math.random()*8 - 4)));
+      p.vitals = p.vitals || []; p.vitals.push({ time: new Date().toISOString(), systolic: sys, diastolic: dia, hr, sugar });
+      save();
+      renderPatientVitals(p);
+    }
+
+    // export patient pdf via jsPDF (client-side)
+    async function exportPatientPdf(p){
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit:'pt', format:'a4' });
+      doc.setFontSize(14); doc.text(`Patient Report — ${p.name}`, 40, 40);
+      doc.setFontSize(10);
+      doc.text(`ID: ${p.id}`, 40, 64); doc.text(`Age: ${p.age}`, 140, 64); doc.text(`Gender: ${p.gender}`, 220, 64);
+      doc.text(`Condition: ${p.condition}`, 40, 84); doc.text(`Status: ${p.status}`, 300, 84);
+      doc.text(`BMI: ${p.bmi}`, 40, 104);
+
+      doc.text('Notes:', 40, 134); doc.text(p.notes||'-', 40, 154, { maxWidth: 520 });
+
+      // add latest vitals table snapshot
+      const last = p.vitals && p.vitals.length ? p.vitals[p.vitals.length-1] : null;
+      doc.text('Latest Vitals:', 40, 200);
+      if(last){
+        doc.text(`Time: ${new Date(last.time).toLocaleString()}`, 40, 220);
+        doc.text(`BP: ${last.systolic}/${last.diastolic} mmHg`, 240, 220);
+        doc.text(`HR: ${last.hr || '-'} bpm`, 40, 238);
+        doc.text(`Sugar: ${last.sugar || '-'} mg/dL`, 240, 238);
+      } else { doc.text('No vitals recorded', 40, 220); }
+
+      // charts snapshot: draw small images from canvas
+      // BP chart
+      try{
+        const bpImg = document.getElementById('chartBP').toDataURL('image/png', 1.0);
+        doc.addImage(bpImg, 'PNG', 40, 260, 250, 120);
+      }catch(e){ /* ignore if chart not ready */ }
+      try{
+        const sugarImg = document.getElementById('chartSugar').toDataURL('image/png', 1.0);
+        doc.addImage(sugarImg, 'PNG', 320, 260, 250, 120);
+      }catch(e){}
+
+      doc.save(`patient-report-${p.id}.pdf`);
+    }
+
+    // patient modal: add/edit
+    btnNew.addEventListener('click', ()=>{ openPatientModal(); });
+
+    function openPatientModal(p){
+      document.getElementById('p_id').value = p ? p.id : '';
+      document.getElementById('p_name').value = p ? p.name : '';
+      document.getElementById('p_age').value = p ? p.age : '';
+      document.getElementById('p_gender').value = p ? p.gender : 'female';
+      document.getElementById('p_height').value = p ? p.height : '';
+      document.getElementById('p_weight').value = p ? p.weight : '';
+      document.getElementById('p_condition').value = p ? p.condition : '';
+      document.getElementById('p_status').value = p ? p.status : 'treatment';
+      document.getElementById('p_photo').value = p ? p.photo : '';
+      document.getElementById('p_notes').value = p ? p.notes : '';
+      modalPatient.show();
+    }
+
+    formPatient.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const id = document.getElementById('p_id').value || uid();
+      const name = document.getElementById('p_name').value.trim();
+      const age = Number(document.getElementById('p_age').value) || 0;
+      const gender = document.getElementById('p_gender').value;
+      const height = Number(document.getElementById('p_height').value) || 0;
+      const weight = Number(document.getElementById('p_weight').value) || 0;
+      const condition = document.getElementById('p_condition').value.trim() || 'General';
+      const status = document.getElementById('p_status').value;
+      const photo = document.getElementById('p_photo').value.trim();
+      const notes = document.getElementById('p_notes').value.trim();
+      const bmi = computeBMI(height, weight);
+
+      const model = { id, name, age, gender, height, weight, bmi, condition, status, photo, notes, vitals: (state.patients.find(x=>x.id===id) ? state.patients.find(x=>x.id===id).vitals : []) || [] };
+      const idx = state.patients.findIndex(x=>x.id===id);
+      if(idx >= 0) state.patients[idx] = model;
+      else state.patients.push(model);
+      save(); modalPatient.hide(); renderDashboard();
+    });
+
+    // back button
+    backBtn.addEventListener('click', ()=>{
+      // stop realtime if running
+      if(realtimeTimer){ clearInterval(realtimeTimer); realtimeTimer=null; btnToggleRealtime.textContent='Start Real-time'; btnToggleRealtime.classList.replace('btn-danger','btn-success'); }
+      showRoute('dashboard'); currentPatientId=null;
+    });
+
+    // import / export whole dataset
+    document.getElementById('btnExport').addEventListener('click', ()=>{
+      const blob = new Blob([JSON.stringify(state.patients, null, 2)], { type:'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'patients-all.json'; a.click(); URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('btnImport').addEventListener('click', ()=> document.getElementById('fileImport').click());
+    document.getElementById('fileImport').addEventListener('change', async (e)=>{
+      const f = e.target.files[0]; if(!f) return;
+      try{
+        const text = await f.text(); const data = JSON.parse(text);
+        if(!Array.isArray(data)) throw new Error('Invalid');
+        state.patients = data.map(d=>({ id: d.id||uid(), name: d.name||'', age: d.age||0, gender: d.gender||'female', height: d.height||0, weight: d.weight||0, bmi: d.bmi || computeBMI(d.height||0,d.weight||0), condition: d.condition||'General', status: d.status||'treatment', photo: d.photo||'', notes: d.notes||'', vitals: d.vitals || [] }));
+        save(); renderDashboard(); alert('Imported');
+      }catch(err){ alert('Import failed'); }
+      e.target.value='';
+    });
+
+    // demo data
+    demoLoad.addEventListener('click', ()=>{
+      state.patients = [
+        { id:'pat1', name:'Anita Joshi', age:32, gender:'female', height:160, weight:60, bmi:computeBMI(160,60), condition:'Diabetes', status:'treatment', photo:'https://i.pravatar.cc/96?img=5', notes:'On metformin', vitals:[ { time: new Date(Date.now()-3600*1000*24).toISOString(), systolic:128, diastolic:82, hr:78, sugar:150 }, { time: new Date().toISOString(), systolic:130, diastolic:84, hr:80, sugar:155 } ] },
+        { id:'pat2', name:'Rohit Patel', age:45, gender:'male', height:172, weight:86, bmi:computeBMI(172,86), condition:'Hypertension', status:'treatment', photo:'https://i.pravatar.cc/96?img=8', notes:'BP meds', vitals:[ { time:new Date().toISOString(), systolic:140, diastolic:92, hr:82, sugar:110 } ] },
+        { id:'pat3', name:'Meera Iyer', age:29, gender:'female', height:158, weight:52, bmi:computeBMI(158,52), condition:'Healthy', status:'recovered', photo:'https://i.pravatar.cc/96?img=3', notes:'Routine check', vitals:[] }
+      ];
+      save(); renderDashboard();
+    });
+
+    clearAll.addEventListener('click', ()=>{ if(confirm('Clear all records?')){ state.patients=[]; save(); renderDashboard(); } });
+
+    // event filters & search
+    [globalSearch, filterGender, filterAge, filterStatus].forEach(el => el.addEventListener('input', renderDashboard));
+    initDashCharts();
+    initPatientCharts();
+
+    // initial load
+    load(); renderDashboard();
+
+    // small utility: open edit modal
+    function openEditModal(p){ openPatientModal(p); modalPatient.show(); }
+
+    // handle Delete vitals event is handled in renderPatientVitals via buttons
+    // capture 'view' and 'delete' buttons on table via delegated listener - already registered earlier
+
+    // keyboard shortcuts (Ctrl+N => new patient)
+    window.addEventListener('keydown', (e)=>{ if(e.ctrlKey && e.key.toLowerCase()==='n'){ openPatientModal(); } });
+
+    // Export patient JSON btn click is wired in renderPatientHeader
+    // Hook click for "View" and "Delete" was earlier by delegated listener
+
+    // When visiting patient route, we must re-init charts to avoid Chart.js warnings
+    // initialize route handling based on hash
+    function handleHash(){
+      const h = location.hash || '#/dashboard';
+      if(h.startsWith('#/patient/')){ const id = h.split('/')[2]; openPatient(id); }
+      else { showRoute('dashboard'); renderDashboard(); }
+    }
+    window.addEventListener('hashchange', handleHash);
+    handleHash();
+
+    // table button delegation for view/delete (in case new rows added)
+    tablePatients.addEventListener('click', (e)=>{
+      const v = e.target.closest('button'); if(!v) return;
+      const act = v.getAttribute('data-act'); const id = v.getAttribute('data-id');
+      if(act === 'view'){ location.hash = `#/patient/${id}`; }
+      if(act === 'del'){ if(confirm('Delete patient?')){ state.patients = state.patients.filter(p=>p.id !== id); save(); renderDashboard(); } }
+    });
+
+    // expose some helpers in console
+    window.gopalState = () => state;
+
+  })();
+
+  </script>
+</body>
+</html>
